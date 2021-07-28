@@ -342,8 +342,9 @@ Given the large knit load, i didn't output above code results
 
 
 ## 3.3 Conclusion  
+We can infer the pair of credit card and loyalty car based on the cc_data and loyalty_data and also the corresponding car_id after joining the gps data.
 
-Based on above data exploration and anomaly detection,we can roughly conclude those anomalies mentioned above.However, those anomalies only include the specific location,card holder and time of interest, without more knowledge about the relationship, such as the travel path for one particular card holder or the relationship between the card holders. In the following,we will incorporate the gps_data to look into such issues.
+
 
 
 
