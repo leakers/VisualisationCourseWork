@@ -1,7 +1,7 @@
 ---
 title: "About this blog"
 description: |
-  Some additional details about the blog
+  Tentatively dedicated for coursework of Singapore Management University ISSS608: Visual Analytics module in AY2020/21 Term 3. Prepared by LIU Nian
 ---
 
 ```{r setup, include=FALSE}
