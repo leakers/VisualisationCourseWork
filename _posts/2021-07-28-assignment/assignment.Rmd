@@ -36,7 +36,7 @@ As an expert in visual analytics, you are called in to help law enforcement from
 Mini-Challenge 2 asks you to analyze movement and tracking data. GAStech provides many of their employees with company cars for their personal and professional use, but unbeknownst to the employees, the cars are equipped with GPS tracking devices. You are given tracking data for the two weeks leading up to the disappearance, as well as credit card transactions and loyalty card usage data. From this data, can you identify anomalies and suspicious behaviors? Can you identify which people use which credit and loyalty cards?
   
   
-* 2. Approach framework
+* Approach framework
 
 The questions themselves offer an actionable approach,which guide us to solve the whole task incrementally.  
 First question require us to detect the anomalies with respect to the location and time based on the cc_data and loyalty_data. This step can also help us to pinpoint the pair of credit card and loyalty card, which are owned by the same employee.SO this underpins the third question.  
@@ -60,7 +60,7 @@ for (p in packages){
 }
 ```
 
-## 2.1 cc_data and loyalty_data  
+## 2.1 Card data  
 
 **cc_data**
 
@@ -120,11 +120,230 @@ glimpse(cc_data_trans)
 glimpse(loyalty_data_trans)
 ```
 
-**Observations:**
-
-1. Ideally, one employee with one credit card record should corresponds to one loyalty card record.If this is the case,we can derive  the pair of  credit card and loyalty card owned by the same employee, through (outer right) joining the above two table on   field of 'day','price' and 'location'  
+>Observations:  
+1. Ideally, one credit card record should correspond to one loyalty card record with exact **date(not time),location and price**.If this is the case,we can derive  the pair of  credit card and loyalty card owned by the same employee,by (outer) joining these two tables on the very three fields.
 2. However, loyalty_data_trans has less rows than cc_data_trans.The reason maybe that  not both credit card and loyalty card are supported for  all of business locations or card holders didn't make consumption by using both credit card and loyatly card. 
 
+
+## 2.2 Vehicle data
+
+* Data import
+
+```{r}
+library('readr')
+gps <- read_csv("MC2/gps.csv")
+
+glimpse(gps)
+```
+
+* New columns Generation
+
+```{r}
+#Tidy and transform the gps_data.csv
+gps$Timestamp <- date_time_parse(gps$Timestamp,
+                                 zone = "",
+                                 format = "%m/%d/%Y %H:%M:%S")
+gps$id <- as_factor(gps$id)
+gps<- gps %>%
+  mutate(weekday=wday(Timestamp),
+         monthday = as_factor(get_day(Timestamp)),
+         hour = get_hour(Timestamp))
+```
+
+* Data transformation 
+
+```{r}
+#set as sf object
+gps_sf <- st_as_sf(gps,
+                   coords = c("long", "lat"),
+                   crs = 4326)
+```
+
+```{r}
+#Transform  from point object into linestring (path)
+gps_path <- gps_sf %>%
+  group_by(id,monthday,weekday,hour) %>%
+  summarize(m =mean(Timestamp),
+            do_union=FALSE) %>%
+  st_cast("LINESTRING")
+```
+
+```{r} 
+# Filter out the orphan line
+p = npts(gps_path, by_feature = TRUE)                 
+gps_path2 <- cbind(gps_path, p) %>%
+  filter(p>1)
+
+```
+
+* Import georeferenced MC2-tourist.jpg as backgound map
+
+```{r}
+bgmap <- raster("MC2/MC2-tourist_modified.tif")
+```
+
+***
+
+# 3. Visualisation
+
+## 3.1 Card data
+
+### 3.1.1 Location frequency bar chart  
+
+* cc_data
+
+```{r, code_folding=TRUE}
+ggplot(cc_data_trans,aes(y=fct_rev(fct_infreq(location))))+
+  geom_bar()+
+  labs(y = "Business locations")+
+  ggtitle('Location popularity based on the credit card consupmtion records')
+```
+
+
+* loyalty_data
+
+```{r,code_folding=TRUE}
+ggplot(loyalty_data_trans, aes(y=fct_rev(fct_infreq(location))))+
+  geom_bar()+
+  labs(y = "Business locations")+
+  ggtitle('Location popularity based on the loyalty card consupmtion records')
+```
+
+> Observation 1:  
+From the bar chart above,on the one hand we can roughly summarize those most 6 popular locations are **Katerinas Cafe,Hippokampos,Guy's Gyros, Brew've Been Served, Hallowed Grounds,Quzeri Elian**, Which make great sense since they are basiclly the cateens and  all near the office of GAS tech building.On the other hand, those less popular places also need to be taken note of such as Kronos Pipe and Irrigation, Abila Scrapyard,Maximum Iron and Steel etc, which are quite abnormal relative to one employee's daily life.  
+One particular anomaly is the place **'Daily Dealz'** which i can't find corresponding location in the Abila map.Also there is no such place in the loyalty data. So probably this place is lying  outside of Abila.
+
+
+Compared the above bar chart  with that based on credit card consumption, we may find the location frequency shows almost the same pattern,which also make great sense.To find more abnormal patterns, we will make use of heatmap in the next.
+
+
+### 3.1.2 Consumption Heatmap 
+
+* cc_data
+
+```{r,code_folding=TRUE}
+#create a consumption_table for the purpose of ordering the last4ccnum by their consumption amount 
+cc_consumption_table <- cc_data_trans%>%
+                  group_by(last4ccnum)%>%
+                  summarise(consumption=sum(price))
+
+level<- cc_consumption_table$last4ccnum[
+        order(cc_consumption_table$consumption, decreasing = T)]
+
+cc_data_trans$last4ccnum <- factor(cc_data_trans$last4ccnum, 
+                                   levels = level)
+
+cc_data_trans$location=factor(fct_infreq(cc_data_trans$location))
+
+#creat heatmap
+cc_hm<- plot_ly(data=cc_data_trans,
+                x=~last4ccnum,
+                y=~location,
+                color=~price)%>%
+  layout(title = 'Heatmap of credit card with varying card holders')
+
+cc_hm
+
+```
+Reference datatable for cc_data
+
+```{r,code_folding=TRUE}
+dt<- datatable(cc_data_trans,filter='top')%>%
+   formatStyle(0,target = 'row')
+dt
+```
+
+Now we change the x-axis of above heatmap from 'last4ccnum' to 'hour':  
+
+```{r, code_folding=TRUE}
+hour_hm<- plot_ly(data=cc_data_trans,
+              x= ~hour,y=~location,color=~price )%>%
+layout(title = 'Heatmap of credit card with varying hours')
+hour_hm
+```
+
+
+Next we plot the heatmap of loyalty card  
+* loyalty_data
+
+```{r, code_folding=TRUE}
+#create a consumption_table for the purpose of ordering the loyaltynum by their consumption amount 
+loyalty_consumption_table<- loyalty_data_trans%>%
+                  group_by(loyaltynum)%>%
+                  summarise(consumption=sum(price))
+
+level<- loyalty_consumption_table$loyaltynum[order(loyalty_consumption_table$consumption,decreasing = T)]
+
+loyalty_data_trans$loyaltynum <- factor(loyalty_data_trans$loyaltynum, levels = level)
+
+loyalty_data_trans$location=factor(fct_infreq(loyalty_data_trans$location))
+# create heatmap
+loyalty_hm<- plot_ly(data=loyalty_data_trans,
+                     x= ~loyaltynum,y=~location,color=~price)%>%
+  layout(title = 'Heatmap of loyalty card with varying card holders')
+
+loyalty_hm
+```
+Reference datatable for loyalty_data
+
+```{r,code_folding=TRUE}
+dt<- datatable(loyalty_data_trans,filter='top')%>%
+   formatStyle(0,target = 'row')
+dt
+```
+
+
+*Note:* For above 3 heatmaps, the 'location' on the Y-axis is in descending order  based on their frequency while the  card num(credit or loyalty) on the X-axis is in descending order based on the sum of price for each card num within each data.   
+
+
+> Observation2:  
+Above two heatmaps also provide us with an alternative to derive the  pair of credit and loyalty card, though there may be  uncertainties. For example, since the record taking place in Abila Scrapyard corresponds to only one loyalty and credit card num, we can be very confident that L3317(loyalty) and 2276(credit)has the same owner.  
+Below are the detected anomalies:  
+  1. Location anomaly
+  The consumption of card holders(include the credit card and loyalty card) lying at left of X-axis happen and almost **solely** happen at those  abnormal locations. The place includes National Refinery,Stewart and Sons Fabrication,Carlyle Chemical Inc etc, in sharp contrast to the Katerinas Cafe, Hippokampos,Guy's Gyros or some other canteens where most of consumption recorded. So this is very suspicious.
+  2. Price amount anomaly
+The records happened at those abnormal places(mentioned above) also contain much larger consumption amount as opposed to other places.  
+  3. Time anomaly  
+From the above heatmap with varying hour, we can easily find below two unusual phenomenons:
+a. 5 consumption records took place at kronos Mart at 3-4AM, which is **Early morning**
+b. 5 consumption records took place at Frydos Autosupply n' More at 9-10 PM, which is abnormal relative the identity of  place(seems like one car accessories shop )
+
+
+## 3.2 Vehicle data  
+
+The code is as below:
+
+```{r, code_folding=TRUE,eval=FALSE}
+#gps_path_selected <- gps_path2 %>%
+#  filter(id==10)
+tmap_mode("view")
+
+tm_shape(bgmap)+
+  tm_rgb(bgmap, r=1, g=2, b=3,
+         alpha = NA,
+         saturation = 1,
+         interpolate = TRUE,
+         max.value = 255) +
+  tm_shape(gps_path2) +
+  tm_lines()+  
+  tm_lines('hour',
+          style='fixed',breaks=seq(0,24,by=4),
+           palette = "Blues",
+           popup.vars=c('hour','monthday','weekday'))+
+  tm_facets(by = "id", nclo=4,free.coords = FALSE)
+
+```
+
+Given the large knit load, i didn't output above code results
+
+
+
+
+
+
+## 3.3 Conclusion  
+
+Based on above data exploration and anomaly detection,we can roughly conclude those anomalies mentioned above.However, those anomalies only include the specific location,card holder and time of interest, without more knowledge about the relationship, such as the travel path for one particular card holder or the relationship between the card holders. In the following,we will incorporate the gps_data to look into such issues.
 
 
 
