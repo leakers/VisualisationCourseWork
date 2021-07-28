@@ -1,0 +1,134 @@
+---
+title: "Assignment"
+description: |
+  VAST challenge 2021 MC2
+author:
+  - name: LIU Nian
+url: https://www.linkedin.com/feed/?trk=guest_homepage-basic_nav-header-signin
+date: 07-20-2021
+output:
+  distill::distill_article:
+    toc: TRUE
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  message = FALSE,
+  warning = FALSE,
+  include = TRUE,
+  echo= FALSE, 
+  eval=TRUE,
+  fig.retina=3
+)
+```
+  
+# 1. Background
+
+* Overall Challenge statement:  
+
+In the roughly twenty years that Tethys-based GAStech has been operating a natural gas production site in the island country of Kronos, it has produced remarkable profits and developed strong relationships with the government of Kronos. However, GAStech has not been as successful in demonstrating environmental stewardship.  
+In January, 2014, the leaders of GAStech are celebrating their new-found fortune as a result of the initial public offering of their very successful company. In the midst of this celebration, several employees of GAStech go missing. An organization known as the Protectors of Kronos (POK) is suspected in the disappearance, but things may not be what they seem.  
+As an expert in visual analytics, you are called in to help law enforcement from Kronos and Tethys
+
+* Mini Challenge2:  
+  
+Mini-Challenge 2 asks you to analyze movement and tracking data. GAStech provides many of their employees with company cars for their personal and professional use, but unbeknownst to the employees, the cars are equipped with GPS tracking devices. You are given tracking data for the two weeks leading up to the disappearance, as well as credit card transactions and loyalty card usage data. From this data, can you identify anomalies and suspicious behaviors? Can you identify which people use which credit and loyalty cards?
+  
+  
+# 2. Approach framework
+
+The questions themselves offer an actionable approach,which guide us to solve the whole task incrementally.  
+First question require us to detect the anomalies with respect to the location and time based on the cc_data and loyalty_data. This step can also help us to pinpoint the pair of credit card and loyalty card, which are owned by the same employee.SO this underpins the third question.  
+Second question hints us to screen out the corresponding Car ID , the owner of who have the abnormal consumption pattern(time and location anomalies) derived from the first question. Further, we can induce the specific employee name baes on the cars-assignment data.  
+The third question is on top of answers of the first and second question.  
+Likewise, the answer of fourth question is also contained with the previous three questions.
+
+
+# 3. Specific Question and answer
+
+```{r}
+packages = c('raster', 'sf', 
+             'tmap', 'clock', 'lubridate',
+             'tidyverse','plotly','DT','patchwork','htmltools','mapview')
+for (p in packages){
+  if(!require(p, character.only = T)){
+    install.packages(p) 
+  }
+  library(p,character.only = T)
+}
+```
+
+## 3.1 Question1
+
+### 3.1.1 Data preprocessing
+
+* Credit card data import
+
+```{r echo= TRUE }
+cc_data <- read_csv("MC2/cc_data.csv")
+glimpse(cc_data)
+```
+
+
+New column generation
+
+```{r echo= TRUE}
+cc_data$timestamp <- date_time_parse(cc_data$timestamp,
+                                     zone = "",
+                                     format = "%m/%d/%Y %H:%M")
+```
+
+```{r echo= TRUE}
+cc_data$location <- as_factor(cc_data$location)
+cc_data$last4ccnum <- as_factor(cc_data$last4ccnum)
+
+cc_data_trans <- cc_data%>%
+  mutate(day = as_factor(get_day(timestamp)),
+         hour = as_factor(get_hour(timestamp)),
+         time = format(timestamp, format = "%H:%M"))
+```
+
+Once we complete the data preprocessing for cc_data, we can apply same procedure to the loyalty_data  
+
+```{r}
+loyalty_data <- read_csv("MC2/loyalty_data.csv")
+loyalty_data$timestamp <- date_time_parse(loyalty_data$timestamp,
+                                          zone = "",
+                                          format = "%m/%d/%Y")
+
+loyalty_data$location <- as_factor(loyalty_data$location)
+loyalty_data$loyaltynum <- as_factor(loyalty_data$loyaltynum)
+loyalty_data_trans <- loyalty_data%>%
+  mutate(day = get_day(timestamp))
+```
+
+Let's take a glimpse of the two transformed table.
+
+```{r}
+glimpse(cc_data_trans)
+glimpse(loyalty_data_trans)
+```
+
+Several findings need to be take note of:
+
+1. Ideally, one employee with one credit card record should corresponds to one loyalty card record.If this is the case,we can derive  the pair of  credit card and loyalty card owned by the same employee, through (outer right) joining the above two table on   field of 'day','price' and 'location'
+2. However, loyalty_data_trans has less rows than cc_data_trans.The reason maybe that  not both credit card or loyalty card are supported for  all of business locations or card holders themselves don't use them both all the time.  
+
+Before conduct visualisation, one particular data anomaly also need to be taken care of---'Katerina<U+0092>s Caf<e9>' in the location field. I conduct one conversion as below:
+
+```{r}
+
+#By referring to the map, the original name of this location should be 'Katerinas Cafe' 
+cc_data_trans$location <- iconv(cc_data$location, "UTF-8","ASCII",  sub="")
+loyalty_data_trans$location <- iconv(loyalty_data$location, "UTF-8","ASCII",  sub="")
+```
+
+
+
+
+
+
+
+
+
