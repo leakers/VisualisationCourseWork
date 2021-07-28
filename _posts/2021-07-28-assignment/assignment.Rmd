@@ -17,13 +17,13 @@ knitr::opts_chunk$set(
   message = FALSE,
   warning = FALSE,
   include = TRUE,
-  echo= FALSE, 
+  echo= TRUE, 
   eval=TRUE,
   fig.retina=3
 )
 ```
   
-# 1. Background
+# 1. Overview
 
 * Overall Challenge statement:  
 
@@ -36,7 +36,7 @@ As an expert in visual analytics, you are called in to help law enforcement from
 Mini-Challenge 2 asks you to analyze movement and tracking data. GAStech provides many of their employees with company cars for their personal and professional use, but unbeknownst to the employees, the cars are equipped with GPS tracking devices. You are given tracking data for the two weeks leading up to the disappearance, as well as credit card transactions and loyalty card usage data. From this data, can you identify anomalies and suspicious behaviors? Can you identify which people use which credit and loyalty cards?
   
   
-# 2. Approach framework
+* 2. Approach framework
 
 The questions themselves offer an actionable approach,which guide us to solve the whole task incrementally.  
 First question require us to detect the anomalies with respect to the location and time based on the cc_data and loyalty_data. This step can also help us to pinpoint the pair of credit card and loyalty card, which are owned by the same employee.SO this underpins the third question.  
@@ -45,7 +45,8 @@ The third question is on top of answers of the first and second question.
 Likewise, the answer of fourth question is also contained with the previous three questions.
 
 
-# 3. Specific Question and answer
+# 2. Data preparation
+Packages to be loaded:
 
 ```{r}
 packages = c('raster', 'sf', 
@@ -59,37 +60,38 @@ for (p in packages){
 }
 ```
 
-## 3.1 Question1
+## 2.1 cc_data and loyalty_data  
 
-### 3.1.1 Data preprocessing
+**cc_data**
 
-* Credit card data import
+* Data import
 
 ```{r echo= TRUE }
 cc_data <- read_csv("MC2/cc_data.csv")
 glimpse(cc_data)
 ```
 
+* New column generation  
 
-New column generation
-
-```{r echo= TRUE}
+```{r}
 cc_data$timestamp <- date_time_parse(cc_data$timestamp,
                                      zone = "",
                                      format = "%m/%d/%Y %H:%M")
 ```
 
-```{r echo= TRUE}
+```{r}
 cc_data$location <- as_factor(cc_data$location)
 cc_data$last4ccnum <- as_factor(cc_data$last4ccnum)
-
 cc_data_trans <- cc_data%>%
   mutate(day = as_factor(get_day(timestamp)),
          hour = as_factor(get_hour(timestamp)),
          time = format(timestamp, format = "%H:%M"))
 ```
 
-Once we complete the data preprocessing for cc_data, we can apply same procedure to the loyalty_data  
+**loyalty data**
+
+The data preparation of cc_data can also be applied to the loyalty_data
+as below:
 
 ```{r}
 loyalty_data <- read_csv("MC2/loyalty_data.csv")
@@ -103,26 +105,27 @@ loyalty_data_trans <- loyalty_data%>%
   mutate(day = get_day(timestamp))
 ```
 
-Let's take a glimpse of the two transformed table.
+One more particular data anomaly also need to be taken care of for both dataframes---'Katerina<U+0092>s Caf<e9>' in the location field, which is not decoded by Rstudio properly. I conduct one conversion as below:
+
+```{r echo=TRUE}
+cc_data_trans$location <- iconv(cc_data$location, "UTF-8","ASCII",  sub="")
+loyalty_data_trans$location <- iconv(loyalty_data$location, "UTF-8","ASCII",  sub="")
+```
+
+
+**Now let's put the two dataframes together to make a comparison:**
 
 ```{r}
 glimpse(cc_data_trans)
 glimpse(loyalty_data_trans)
 ```
 
-Several findings need to be take note of:
+**Observations:**
 
-1. Ideally, one employee with one credit card record should corresponds to one loyalty card record.If this is the case,we can derive  the pair of  credit card and loyalty card owned by the same employee, through (outer right) joining the above two table on   field of 'day','price' and 'location'
-2. However, loyalty_data_trans has less rows than cc_data_trans.The reason maybe that  not both credit card or loyalty card are supported for  all of business locations or card holders themselves don't use them both all the time.  
+1. Ideally, one employee with one credit card record should corresponds to one loyalty card record.If this is the case,we can derive  the pair of  credit card and loyalty card owned by the same employee, through (outer right) joining the above two table on   field of 'day','price' and 'location'  
+2. However, loyalty_data_trans has less rows than cc_data_trans.The reason maybe that  not both credit card and loyalty card are supported for  all of business locations or card holders didn't make consumption by using both credit card and loyatly card. 
 
-Before conduct visualisation, one particular data anomaly also need to be taken care of---'Katerina<U+0092>s Caf<e9>' in the location field. I conduct one conversion as below:
 
-```{r}
-
-#By referring to the map, the original name of this location should be 'Katerinas Cafe' 
-cc_data_trans$location <- iconv(cc_data$location, "UTF-8","ASCII",  sub="")
-loyalty_data_trans$location <- iconv(loyalty_data$location, "UTF-8","ASCII",  sub="")
-```
 
 
 
